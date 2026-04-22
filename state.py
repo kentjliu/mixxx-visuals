@@ -29,6 +29,9 @@ class MusicState:
         # Reference point for beat interpolation
         self._ref_time: float = time.time()
         self._ref_pos_seconds: float = 0.0
+        # Beat counter — incremented by DataSource on every detected beat;
+        # renderer detects new beats by comparing against its local copy.
+        self.beat_count: int = 0
 
     def active_deck(self) -> DeckState:
         """Return the deck that is playing with known BPM, preferring deck 1."""

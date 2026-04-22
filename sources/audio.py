@@ -93,9 +93,6 @@ class AudioDataSource(DataSource):
             self._state.deck1.bpm = bpm
 
         if is_beat:
-            # Anchor beat-phase interpolation.  beat_phase() computes
-            # (elapsed % beat_duration) / beat_duration, so setting
-            # _ref_pos_seconds=0 and _ref_time=now gives phase=0 at the
-            # beat and ~1.0 just before the next one.
             self._state._ref_time = time.time()
             self._state._ref_pos_seconds = 0.0
+            self._state.beat_count += 1
