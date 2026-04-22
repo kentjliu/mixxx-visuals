@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import QApplication, QMainWindow
 
 from state import MusicState
 from visuals.shaders import VERT, FRAG_BY_MODE, MODE_NAMES
-from visuals.ascii_vis import DANCER_POSES
+from visuals.ascii_vis import DANCER_POSES, AsciiVisualizer
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Overlay colour palette (for QPainter text drawn over the shader)
@@ -90,6 +90,7 @@ class ShaderWidget(QOpenGLWidget):
         self._dancer_frame = 0
         self._last_beat    = 0
         self._start        = time.time()
+        self._ascii_mode   = False
 
         # Monospace font for overlay
         for name in ("Menlo", "Monaco", "Consolas", "Courier New", "Courier"):
@@ -98,6 +99,12 @@ class ShaderWidget(QOpenGLWidget):
                 self._font = f
                 break
         self._font_large = QFont(self._font.family(), 26)
+        self._font_bold  = QFont(self._font.family(), 15)
+        self._font_bold.setBold(True)
+
+        # ASCII visualiser (shares the same state; QtCanvas sized dynamically)
+        self._qt_canvas = QtCanvas()
+        self._ascii_vis = AsciiVisualizer(self._qt_canvas, state)
 
         self._ctx      = None
         self._programs = {}
@@ -134,7 +141,15 @@ class ShaderWidget(QOpenGLWidget):
             self._ctx.viewport = (0, 0, w, h)
 
     def paintGL(self):
-        """Render the shader — no QPainter here (would wipe the GL output)."""
+        """All rendering happens here — both GL shader and QPainter overlay.
+
+        Qt requires QPainter to be used inside paintGL() on QOpenGLWidget;
+        starting it in paintEvent() would clear the framebuffer first.
+        """
+        if self._ascii_mode:
+            self._paint_ascii()
+            return
+
         if self._ctx is None:
             return
 
@@ -152,6 +167,11 @@ class ShaderWidget(QOpenGLWidget):
         deck      = self.state.active_deck()
         bp        = self.state.beat_phase()
 
+        # QOpenGLWidget renders into an internal FBO, not FBO 0.
+        # Tell moderngl to target that FBO so output reaches the screen.
+        fbo = self._ctx.detect_framebuffer(self.defaultFramebufferObject())
+        fbo.use()
+
         def _set(u, v):
             if u in prog:
                 prog[u].value = v
@@ -168,18 +188,44 @@ class ShaderWidget(QOpenGLWidget):
         self._ctx.clear(0.0, 0.0, 0.0)
         vao.render(moderngl.TRIANGLE_STRIP)
 
-    def paintEvent(self, event):
-        """Qt calls this to composite everything. GL renders first, then overlay."""
-        # Let QOpenGLWidget do the OpenGL pass
-        super().paintEvent(event)
-
-        # QPainter overlay drawn AFTER GL — composited on top by Qt
+        # QPainter overlay — must be started inside paintGL() on QOpenGLWidget
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
-        mode_name = MODE_NAMES[self._mode_idx]
-        bp        = self.state.beat_phase()
-        deck      = self.state.active_deck()
         self._draw_overlay(painter, mode_name, bp, deck)
+        painter.end()
+
+    # ── ASCII mode ──────────────────────────────────────────────────────────
+
+    def _paint_ascii(self) -> None:
+        """Render the ASCII visualiser via QPainter (no GL shader)."""
+        fm = QFontMetrics(self._font)
+        cw = fm.averageCharWidth()
+        ch = fm.height()
+        cols = max(1, self.width()  // cw)
+        rows = max(1, self.height() // ch)
+        self._qt_canvas.resize(rows, cols)
+
+        self._ascii_vis.draw_frame(time.time() - self._start)
+        chars, colors, bolds = self._qt_canvas.snapshot()
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        painter.fillRect(0, 0, self.width(), self.height(), QColor(0, 0, 0))
+
+        for row in range(rows):
+            y = row * ch + fm.ascent()
+            for col in range(cols):
+                char = chars[row, col]
+                if char == " ":
+                    continue
+                cidx  = int(colors[row, col])
+                color = _OVERLAY_COLORS[cidx] if 0 < cidx < len(_OVERLAY_COLORS) else QColor(255, 255, 255)
+                if color is None:
+                    color = QColor(255, 255, 255)
+                painter.setFont(self._font_bold if bolds[row, col] else self._font)
+                painter.setPen(color)
+                painter.drawText(col * cw, y, char)
+
         painter.end()
 
     # ── Overlay ─────────────────────────────────────────────────────────────
@@ -240,7 +286,7 @@ class ShaderWidget(QOpenGLWidget):
             pos_s = f"  {e//60}:{e%60:02d}/{tot//60}:{tot%60:02d}"
 
         info = f" {status} {deck.title}  {bpm_s}{pos_s}  [{mode}]"
-        hint = " m=mode  f=fullscreen  t=on-top  +/-=brightness  q=quit"
+        hint = " m=mode  a=ascii  f=fullscreen  t=on-top  +/-=brightness  q=quit"
 
         # Semi-transparent black bar at the bottom
         from PyQt6.QtGui import QColor as QC
@@ -256,12 +302,23 @@ class ShaderWidget(QOpenGLWidget):
 
     def keyPressEvent(self, event):
         k = event.key()
-        if k == Qt.Key.Key_M:
-            self._mode_idx = (self._mode_idx + 1) % len(MODE_NAMES)
+        if k == Qt.Key.Key_A:
+            self._ascii_mode = not self._ascii_mode
+        elif k == Qt.Key.Key_M:
+            if self._ascii_mode:
+                self._ascii_vis.next_mode()
+            else:
+                self._mode_idx = (self._mode_idx + 1) % len(MODE_NAMES)
         elif k in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
-            self._intensity = min(2.0, self._intensity + 0.1)
+            if self._ascii_mode:
+                self._ascii_vis.adjust_brightness(+0.1)
+            else:
+                self._intensity = min(2.0, self._intensity + 0.1)
         elif k == Qt.Key.Key_Minus:
-            self._intensity = max(0.1, self._intensity - 0.1)
+            if self._ascii_mode:
+                self._ascii_vis.adjust_brightness(-0.1)
+            else:
+                self._intensity = max(0.1, self._intensity - 0.1)
         elif k in (Qt.Key.Key_Q, Qt.Key.Key_Escape):
             self.window().close()
         elif k == Qt.Key.Key_F:

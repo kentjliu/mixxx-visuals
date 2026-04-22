@@ -1,12 +1,26 @@
 # mixxx-visuals
 
-Real-time music-reactive ASCII art visualiser for [Mixxx DJ software](https://github.com/mixxxdj/mixxx).
+Real-time music-reactive visualiser for [Mixxx DJ software](https://github.com/mixxxdj/mixxx).
 
-Listens to your audio output, detects beats in real time, and renders animated ASCII art in a standalone window or terminal. No Mixxx configuration required.
+Listens to your audio output, detects beats in real time, and renders animated visuals in a standalone window or terminal. No Mixxx configuration required.
 
-![modes: ripple, plasma, matrix, fire, particles, dancer]
+Two rendering modes, toggled with `a` at any time:
 
-## Modes
+- **GLSL shaders** — GPU-accelerated full-screen visuals (default in `--window`)
+- **ASCII art** — character-based animations (default in terminal mode)
+
+## Shader modes
+
+| Mode | Description |
+|------|-------------|
+| **ripple** | Water-surface interference pattern, bass drives amplitude |
+| **plasma** | Overlapping sine-wave colour field, mid/high shift the hues |
+| **matrix** | Infinite 3D tunnel with falling-character rain aesthetic |
+| **fire** | Procedural fbm-noise fire that surges on beat |
+| **particles** | Nebula clouds and stars that burst outward on beat |
+| **dancer** | Circular spectrum rings — bass/mid/high each pulse a ring |
+
+## ASCII art modes
 
 | Mode | Description |
 |------|-------------|
@@ -17,7 +31,7 @@ Listens to your audio output, detects beats in real time, and renders animated A
 | **particles** | Sparks burst from centre on each beat, fade with gravity |
 | **dancer** | Stick figure cycling through 8 dance poses each beat |
 
-Press `m` to cycle through all modes while running.
+Press `m` to cycle through modes, `a` to toggle between shader and ASCII rendering.
 
 ## Requirements
 
@@ -85,7 +99,8 @@ python main.py --window
 
 | Key | Action |
 |-----|--------|
-| `m` | Cycle visual mode |
+| `a` | Toggle between GLSL shader and ASCII art rendering |
+| `m` | Cycle visual mode (within current rendering type) |
 | `+` / `-` | Increase / decrease brightness |
 | `f` | Toggle fullscreen |
 | `t` | Toggle always-on-top *(useful as a second-monitor DJ overlay)* |
@@ -98,11 +113,12 @@ AudioDataSource          — captures audio, detects beats (pure numpy, no aubio
       ↓
 MusicState               — shared state: BPM, beat phase, volume, beat count
       ↓
-AsciiVisualizer          — 6 visual modes, backend-agnostic
-      ↓
+ShaderWidget             — QOpenGLWidget; GLSL shaders via moderngl
+  └── AsciiVisualizer    — 6 ASCII modes (toggled with 'a', rendered via QPainter)
+        ↓
 Canvas (abstract)
   ├── CursesCanvas       — terminal mode
-  └── QtCanvas           — window mode (renders with QPainter)
+  └── QtCanvas           — Qt window ASCII mode (renders with QPainter)
 ```
 
 The `Canvas` abstraction is also the migration path toward embedding directly inside Mixxx as a Qt widget (no other code changes required).
