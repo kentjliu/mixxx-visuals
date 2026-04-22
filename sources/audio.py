@@ -92,6 +92,10 @@ class AudioDataSource(DataSource):
         if bpm > 0:
             self._state.deck1.bpm = bpm
 
+        self._state.bass = self._detector.bass
+        self._state.mid  = self._detector.mid
+        self._state.high = self._detector.high
+
         if is_beat:
             self._state._ref_time = time.time()
             self._state._ref_pos_seconds = 0.0

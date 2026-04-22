@@ -32,6 +32,10 @@ class MusicState:
         # Beat counter — incremented by DataSource on every detected beat;
         # renderer detects new beats by comparing against its local copy.
         self.beat_count: int = 0
+        # Normalised frequency-band energies (0.0–1.0), updated each audio hop
+        self.bass: float = 0.0
+        self.mid:  float = 0.0
+        self.high: float = 0.0
 
     def active_deck(self) -> DeckState:
         """Return the deck that is playing with known BPM, preferring deck 1."""

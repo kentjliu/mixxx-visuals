@@ -31,11 +31,18 @@ class BeatDetector:
 
         # Overlapping FFT window
         self._window  = np.zeros(_FFT_SIZE, dtype=np.float32)
-        # Frequency bins for the bass band
-        freqs         = np.fft.rfftfreq(_FFT_SIZE, 1.0 / sample_rate)
-        self._bass    = (freqs >= 40) & (freqs <= 200)
+        # Frequency band masks for bass / mid / high
+        freqs      = np.fft.rfftfreq(_FFT_SIZE, 1.0 / sample_rate)
+        self._bass = (freqs >=   40) & (freqs <=  200)
+        self._mid  = (freqs >=  200) & (freqs <= 2000)
+        self._high = (freqs >= 2000) & (freqs <= 8000)
         # Hann window to reduce spectral leakage
-        self._hann    = np.hanning(_FFT_SIZE).astype(np.float32)
+        self._hann = np.hanning(_FFT_SIZE).astype(np.float32)
+        # Normalised band energies (updated each process() call)
+        self.bass: float = 0.0
+        self.mid:  float = 0.0
+        self.high: float = 0.0
+        self._band_max = np.array([1e-6, 1e-6, 1e-6])  # slow-decay normaliser
 
         # Rolling energy history
         self._history     = np.zeros(_HISTORY_LEN, dtype=np.float32)
@@ -57,9 +64,24 @@ class BeatDetector:
         self._window = np.roll(self._window, -self.hop_size)
         self._window[-self.hop_size:] = samples
 
-        # Bass energy via FFT
+        # Full spectrum
         spectrum = np.fft.rfft(self._window * self._hann)
-        bass_energy = float(np.mean(np.abs(spectrum[self._bass]) ** 2)) ** 0.5
+        mags     = np.abs(spectrum)
+
+        # Per-band RMS energies
+        def _rms(mask):
+            m = mags[mask]
+            return float(np.sqrt(np.mean(m ** 2))) if m.size else 0.0
+
+        bass_energy = _rms(self._bass)
+        mid_energy  = _rms(self._mid)
+        high_energy = _rms(self._high)
+
+        # Normalise each band against a slow-decaying peak (keeps 0–1 range)
+        raw = np.array([bass_energy, mid_energy, high_energy])
+        self._band_max = np.maximum(self._band_max * 0.999, raw + 1e-9)
+        normed = np.clip(raw / self._band_max, 0.0, 1.0)
+        self.bass, self.mid, self.high = float(normed[0]), float(normed[1]), float(normed[2])
 
         # Update history ring buffer
         self._history[self._history_ptr] = bass_energy
