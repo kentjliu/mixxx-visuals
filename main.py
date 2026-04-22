@@ -44,6 +44,14 @@ def run_terminal(args):
 
 
 def run_window(args):
+    # QSurfaceFormat MUST be set before QApplication is created.
+    from PyQt6.QtGui import QSurfaceFormat
+    fmt = QSurfaceFormat()
+    fmt.setVersion(3, 3)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    fmt.setDepthBufferSize(24)
+    QSurfaceFormat.setDefaultFormat(fmt)
+
     from visuals.qt_window import run_qt_window
 
     state  = MusicState()

@@ -111,60 +111,74 @@ class ShaderWidget(QOpenGLWidget):
     # ── OpenGL lifecycle ────────────────────────────────────────────────────
 
     def initializeGL(self):
-        self._ctx = moderngl.create_context()
+        try:
+            self._ctx = moderngl.create_context()
+        except Exception as e:
+            print(f"[shader] moderngl init failed: {e}")
+            return
 
         # Full-screen quad (triangle strip)
         verts = np.array([-1,-1, 1,-1, -1,1, 1,1], dtype="f4")
         vbo   = self._ctx.buffer(verts.tobytes())
 
         for name, frag in FRAG_BY_MODE.items():
-            prog = self._ctx.program(vertex_shader=VERT, fragment_shader=frag)
-            vao  = self._ctx.vertex_array(prog, [(vbo, "2f", "in_vert")])
-            self._programs[name] = (prog, vao)
+            try:
+                prog = self._ctx.program(vertex_shader=VERT, fragment_shader=frag)
+                vao  = self._ctx.vertex_array(prog, [(vbo, "2f", "in_vert")])
+                self._programs[name] = (prog, vao)
+            except Exception as e:
+                print(f"[shader] compile failed for '{name}': {e}")
 
     def resizeGL(self, w, h):
         if self._ctx:
             self._ctx.viewport = (0, 0, w, h)
 
     def paintGL(self):
+        """Render the shader — no QPainter here (would wipe the GL output)."""
         if self._ctx is None:
             return
 
         t = time.time() - self._start
 
-        # Beat detection
         if self.state.beat_count != self._last_beat:
             self._dancer_frame = (self._dancer_frame + 1) % len(DANCER_POSES)
             self._last_beat = self.state.beat_count
 
-        # ── Shader pass ───────────────────────────────────────────────────
         mode_name = MODE_NAMES[self._mode_idx]
+        if mode_name not in self._programs:
+            return
+
         prog, vao = self._programs[mode_name]
+        deck      = self.state.active_deck()
+        bp        = self.state.beat_phase()
 
-        deck   = self.state.active_deck()
-        bp     = self.state.beat_phase()
-        bpm    = deck.bpm or 120.0
-        volume = min(deck.volume * self._intensity, 1.0)
-
-        def _set(name, val):
-            if name in prog:
-                prog[name].value = val
+        def _set(u, v):
+            if u in prog:
+                prog[u].value = v
 
         _set("u_resolution", (float(self.width()), float(self.height())))
         _set("u_time",   t)
         _set("u_beat",   bp)
-        _set("u_bpm",    bpm)
-        _set("u_volume", volume)
-        _set("u_bass",   min(self.state.bass * self._intensity, 1.0))
-        _set("u_mid",    min(self.state.mid  * self._intensity, 1.0))
-        _set("u_high",   min(self.state.high * self._intensity, 1.0))
+        _set("u_bpm",    deck.bpm or 120.0)
+        _set("u_volume", min(deck.volume * self._intensity, 1.0))
+        _set("u_bass",   min(self.state.bass  * self._intensity, 1.0))
+        _set("u_mid",    min(self.state.mid   * self._intensity, 1.0))
+        _set("u_high",   min(self.state.high  * self._intensity, 1.0))
 
         self._ctx.clear(0.0, 0.0, 0.0)
         vao.render(moderngl.TRIANGLE_STRIP)
 
-        # ── QPainter overlay ──────────────────────────────────────────────
+    def paintEvent(self, event):
+        """Qt calls this to composite everything. GL renders first, then overlay."""
+        # Let QOpenGLWidget do the OpenGL pass
+        super().paintEvent(event)
+
+        # QPainter overlay drawn AFTER GL — composited on top by Qt
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        mode_name = MODE_NAMES[self._mode_idx]
+        bp        = self.state.beat_phase()
+        deck      = self.state.active_deck()
         self._draw_overlay(painter, mode_name, bp, deck)
         painter.end()
 
@@ -265,13 +279,11 @@ class ShaderWidget(QOpenGLWidget):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_qt_window(state: MusicState) -> None:
-    """Launch the shader window.  Blocks until closed."""
-    # Request OpenGL 3.3 Core before creating QApplication
-    fmt = QSurfaceFormat()
-    fmt.setVersion(3, 3)
-    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
-    QSurfaceFormat.setDefaultFormat(fmt)
+    """Launch the shader window.  Blocks until closed.
 
+    Note: QSurfaceFormat must be configured by the caller (main.py)
+    BEFORE this function is imported, i.e. before QApplication is created.
+    """
     app    = QApplication.instance() or QApplication([])
     app.setApplicationName("Mixxx Visuals")
 
