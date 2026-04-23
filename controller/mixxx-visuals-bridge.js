@@ -48,7 +48,16 @@ MixxxVisualsBridge.shutdown = function (id) {
     print("[MixxxVisualsBridge] shutdown");
 };
 
+MixxxVisualsBridge._tickCount = 0;
+
 MixxxVisualsBridge.tick = function () {
+    MixxxVisualsBridge._tickCount++;
+
+    // Log every 100 ticks (~5 s) to confirm the timer is firing
+    if (MixxxVisualsBridge._tickCount % 100 === 1) {
+        print("[MixxxVisualsBridge] tick #" + MixxxVisualsBridge._tickCount);
+    }
+
     var decks = MixxxVisualsBridge.DECKS;
     for (var i = 0; i < decks.length; i++) {
         var group = decks[i];
@@ -67,7 +76,14 @@ MixxxVisualsBridge.tick = function () {
         var beatByte = Math.round(Math.min(1.0, Math.max(0.0, beatDist)) * 127);
         var volByte  = Math.round(Math.min(1.0, Math.max(0.0, volume))  * 127);
 
+        // SysEx packet: F0 7D 01 <deck> <bpmMsb> <bpmLsb> <beat> <vol> <play> F7
         var msg = [0xF0, 0x7D, 0x01, i, bpmMsb, bpmLsb, beatByte, volByte, play, 0xF7];
         midi.sendSysexMsg(msg, msg.length);
+
+        // Also send a plain CC so we can verify basic MIDI routing works
+        // CC 20 on channel 1: deck index; CC 21: bpm MSB; CC 22: bpm LSB
+        midi.sendShortMsg(0xB0, 20 + i * 3,     i);
+        midi.sendShortMsg(0xB0, 20 + i * 3 + 1, bpmMsb);
+        midi.sendShortMsg(0xB0, 20 + i * 3 + 2, bpmLsb);
     }
 };
