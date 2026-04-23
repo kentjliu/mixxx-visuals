@@ -6,6 +6,8 @@ Mixxx ASCII / Shader Visualiser
   python main.py --window --device 1          # shader + BlackHole loopback
   python main.py --window --mixxx             # shader + Mixxx MIDI bridge
   python main.py --window --mixxx --device 1  # MIDI bridge + audio freq bands
+  python main.py --window --midi-clock        # rekordbox / Traktor MIDI clock
+  python main.py --window --midi-clock --device "BlackHole 2ch"  # clock + freq bands
   python main.py --list-devices               # show audio inputs
   python main.py --list-midi                  # show MIDI input ports
 
@@ -69,7 +71,13 @@ def run_window(args):
         midi_src.start(state)
         sources.append(midi_src)
 
-    if args.device is not None or not args.mixxx:
+    if args.midi_clock:
+        from sources.midi_clock_source import MidiClockSource
+        clock_src = MidiClockSource(port=args.midi_port)
+        clock_src.start(state)
+        sources.append(clock_src)
+
+    if args.device is not None or not (args.mixxx or args.midi_clock):
         # Audio source: required when no MIDI bridge, optional alongside it
         # for frequency-band data (bass/mid/high shaders).
         audio_src = AudioDataSource(device=args.device)
@@ -94,8 +102,10 @@ def main():
                         help='Audio input device name or index (e.g. "BlackHole 2ch" or 1)')
     parser.add_argument("--mixxx", action="store_true",
                         help="Receive BPM + beat data from Mixxx via the MIDI bridge")
+    parser.add_argument("--midi-clock", action="store_true",
+                        help="Sync to MIDI clock from rekordbox, Traktor, Serato, etc.")
     parser.add_argument("--midi-port", default="IAC Driver Bus 1",
-                        help='MIDI input port for the bridge (default: "IAC Driver Bus 1")')
+                        help='MIDI input port (default: "IAC Driver Bus 1")')
     parser.add_argument("--list-devices", action="store_true",
                         help="List audio input devices and exit")
     parser.add_argument("--list-midi", action="store_true",

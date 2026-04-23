@@ -104,10 +104,37 @@ python main.py --window
 --window, -w        Open a Qt window instead of running in the terminal
 --device DEVICE     Audio input device name or index (e.g. "BlackHole 2ch" or 1)
 --mixxx             Receive BPM + beat data from Mixxx via the MIDI bridge
---midi-port PORT    MIDI input port for the bridge (default: "IAC Driver Bus 1")
+--midi-clock        Sync to MIDI clock from rekordbox, Traktor, Serato, etc.
+--midi-port PORT    MIDI input port (default: "IAC Driver Bus 1")
 --list-devices      List available audio input devices and exit
 --list-midi         List available MIDI input ports and exit
 ```
+
+## rekordbox (and Traktor / Serato) MIDI clock setup
+
+The MIDI clock approach works with any DJ software that can send standard MIDI clock. It gives the visualiser exact BPM and beat phase straight from the software's beat grid — no audio detection needed.
+
+### 1. Enable IAC Driver (macOS virtual MIDI bus)
+
+Audio MIDI Setup → Window → Show MIDI Studio → double-click **IAC Driver** → check **"Device is online"**
+
+### 2. Configure MIDI clock output in rekordbox
+
+**rekordbox → Preferences → MIDI/Keyboard/Gamepad (or Controller):**
+- Enable **MIDI Clock**
+- Set **Output** to **IAC Driver Bus 1**
+
+### 3. Run
+
+```bash
+python main.py --window --midi-clock
+```
+
+Add `--device "BlackHole 2ch"` to also get bass/mid/high frequency data for the shader modes.
+
+The same `--midi-clock` flag works with Traktor and Serato — just point their MIDI clock output at IAC Driver Bus 1.
+
+---
 
 ## Mixxx MIDI bridge setup
 
