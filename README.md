@@ -30,6 +30,7 @@ Two rendering modes, toggled with `a` at any time:
 | **fire** | ASCII fire simulation that surges on beat |
 | **particles** | Sparks burst from centre on each beat, fade with gravity |
 | **dancer** | Stick figure cycling through 8 dance poses each beat |
+| **charm** | 77-frame imported dance animation by Charm Ladonna, speed synced to BPM, colour flashes on beat |
 
 Press `m` to cycle through modes, `a` to toggle between shader and ASCII rendering.
 

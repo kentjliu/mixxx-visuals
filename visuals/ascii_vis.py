@@ -18,6 +18,7 @@ import numpy as np
 
 from state import MusicState
 from visuals.canvas import Canvas, BLUE, CYAN, GREEN, YELLOW, RED, MAGENTA, WHITE
+from visuals.charm_dancer_frames import CHARM_DANCER_FRAMES
 
 TARGET_FPS = 30
 
@@ -94,6 +95,7 @@ class AsciiVisualizer:
             ("fire",      self._draw_fire),
             ("particles", self._draw_particles),
             ("dancer",    self._draw_dancer),
+            ("charm",     self._draw_charm_dancer),
         ]
 
         self._last_beat_count = 0
@@ -106,6 +108,7 @@ class AsciiVisualizer:
         self._fire_buf      = None
         self._particles: list[_Particle] = []
         self._dancer_frame  = 0
+        self._charm_start   = time.time()
 
     # ----------------------------------------------------------------------- #
     #  Public control API (used by Qt key handler)                            #
@@ -115,6 +118,7 @@ class AsciiVisualizer:
         self._mode_idx = (self._mode_idx + 1) % len(self._modes)
         self._matrix_heads = None
         self._fire_buf = None
+        self._charm_start = time.time()
 
     def adjust_brightness(self, delta: float) -> None:
         self._intensity = max(0.1, min(2.0, self._intensity + delta))
@@ -408,6 +412,41 @@ class AsciiVisualizer:
         bx = w // 2 - len(bpm_str) // 2
         if 0 <= by < h:
             self.canvas.puts(by, bx, bpm_str, WHITE, True)
+
+    # ----------------------------------------------------------------------- #
+    #  Mode: charm dancer (77-frame imported animation, beat-colour sync)     #
+    # ----------------------------------------------------------------------- #
+
+    def _draw_charm_dancer(self, h: int, w: int, t: float) -> None:
+        bp  = self.state.beat_phase()
+        bpm = self.state.deck1.bpm or 120.0
+
+        # Advance through 77 frames at the original ~30 fps,
+        # but scale speed with BPM so the loop feels on-tempo.
+        fps        = 30.0 * (bpm / 120.0)
+        n_frames   = len(CHARM_DANCER_FRAMES)
+        elapsed    = t - self._charm_start
+        frame_idx  = int(elapsed * fps) % n_frames
+        frame      = CHARM_DANCER_FRAMES[frame_idx]
+
+        # Centre the frame on the canvas
+        frame_h = len(frame)
+        frame_w = max((len(row) for row in frame), default=0)
+        sy = max(0, (h - 3 - frame_h) // 2)
+        sx = max(0, (w - frame_w) // 2)
+
+        # Colour flashes on beat: white on beat, cycle through colours off beat
+        on_beat = bp < 0.12
+        color   = WHITE if on_beat else (int(bp * 6) % 6) + 1
+
+        for ri, row in enumerate(frame):
+            py = sy + ri
+            if py >= h - 3:
+                break
+            for ci, ch in enumerate(row):
+                px = sx + ci
+                if ch != ' ' and 0 <= px < w:
+                    self.canvas.put(py, px, ch, color, on_beat)
 
     # ----------------------------------------------------------------------- #
     #  Info bar                                                                #
