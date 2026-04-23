@@ -1,16 +1,22 @@
 """
 Mixxx ASCII / Shader Visualiser
 
-  python main.py                      # ASCII art in terminal
-  python main.py --window             # GLSL shader window  (default device)
-  python main.py --window --device 1  # shader window + BlackHole input
-  python main.py --list-devices       # show audio inputs
+  python main.py                              # ASCII art in terminal
+  python main.py --window                     # GLSL shader window (default mic)
+  python main.py --window --device 1          # shader + BlackHole loopback
+  python main.py --window --mixxx             # shader + Mixxx MIDI bridge
+  python main.py --window --mixxx --device 1  # MIDI bridge + audio freq bands
+  python main.py --list-devices               # show audio inputs
+  python main.py --list-midi                  # show MIDI input ports
 
-macOS loopback:
+macOS audio loopback (for frequency bands without --mixxx):
   1. Install BlackHole: https://existential.audio/blackhole/
   2. Audio MIDI Setup → New Multi-Output Device (speakers + BlackHole 2ch)
   3. Mixxx → Preferences → Sound Hardware → Master → Multi-Output Device
   4. python main.py --window --device "BlackHole 2ch"
+
+Mixxx MIDI bridge (accurate BPM + beat from Mixxx's beat grid):
+  See controller/mixxx-visuals-bridge.js for full setup instructions.
 """
 
 import argparse
@@ -54,13 +60,27 @@ def run_window(args):
 
     from visuals.qt_window import run_qt_window
 
-    state  = MusicState()
-    source = AudioDataSource(device=args.device)
-    source.start(state)
+    state   = MusicState()
+    sources = []
+
+    if args.mixxx:
+        from sources.midi_source import MixxxMidiSource
+        midi_src = MixxxMidiSource(port=args.midi_port)
+        midi_src.start(state)
+        sources.append(midi_src)
+
+    if args.device is not None or not args.mixxx:
+        # Audio source: required when no MIDI bridge, optional alongside it
+        # for frequency-band data (bass/mid/high shaders).
+        audio_src = AudioDataSource(device=args.device)
+        audio_src.start(state)
+        sources.append(audio_src)
+
     try:
         run_qt_window(state)
     finally:
-        source.stop()
+        for src in sources:
+            src.stop()
 
 
 def main():
@@ -71,13 +91,24 @@ def main():
     parser.add_argument("--window", "-w", action="store_true",
                         help="Open a GLSL shader window (default: terminal ASCII)")
     parser.add_argument("--device", default=None,
-                        help='Audio input (e.g. "BlackHole 2ch" or 1)')
+                        help='Audio input device name or index (e.g. "BlackHole 2ch" or 1)')
+    parser.add_argument("--mixxx", action="store_true",
+                        help="Receive BPM + beat data from Mixxx via the MIDI bridge")
+    parser.add_argument("--midi-port", default="IAC Driver Bus 1",
+                        help='MIDI input port for the bridge (default: "IAC Driver Bus 1")')
     parser.add_argument("--list-devices", action="store_true",
-                        help="List audio inputs and exit")
+                        help="List audio input devices and exit")
+    parser.add_argument("--list-midi", action="store_true",
+                        help="List MIDI input ports and exit")
     args = parser.parse_args()
 
     if args.list_devices:
         list_devices()
+        return
+
+    if args.list_midi:
+        from sources.midi_source import list_midi_ports
+        list_midi_ports()
         return
 
     if args.window:

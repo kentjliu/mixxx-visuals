@@ -72,9 +72,19 @@ Look for `BlackHole 2ch` in the list.
 
 ## Usage
 
-**Standalone window** *(recommended)*
+**Standalone window — audio loopback** *(beat detection from audio)*
 ```bash
 python main.py --window --device "BlackHole 2ch"
+```
+
+**Standalone window — Mixxx MIDI bridge** *(accurate BPM + beat from Mixxx's beat grid)*
+```bash
+python main.py --window --mixxx
+```
+
+**Both — MIDI bridge for BPM/beat + audio for frequency bands**
+```bash
+python main.py --window --mixxx --device "BlackHole 2ch"
 ```
 
 **Terminal mode**
@@ -92,8 +102,55 @@ python main.py --window
 ```
 --window, -w        Open a Qt window instead of running in the terminal
 --device DEVICE     Audio input device name or index (e.g. "BlackHole 2ch" or 1)
+--mixxx             Receive BPM + beat data from Mixxx via the MIDI bridge
+--midi-port PORT    MIDI input port for the bridge (default: "IAC Driver Bus 1")
 --list-devices      List available audio input devices and exit
+--list-midi         List available MIDI input ports and exit
 ```
+
+## Mixxx MIDI bridge setup
+
+The bridge gives the visualiser access to Mixxx's internal beat grid — more accurate than audio-based detection, especially at low volumes or during breakdowns.
+
+### 1. Enable the IAC Driver (macOS virtual MIDI bus)
+
+1. Open **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
+2. **Window → Show MIDI Studio**
+3. Double-click **IAC Driver** → check **"Device is online"**
+
+### 2. Install the controller mapping
+
+Copy both files from the `controller/` folder into Mixxx's controller directory:
+
+```
+~/Library/Containers/org.mixxx.mixxx/Data/Library/Application Support/Mixxx/controllers/
+```
+
+```bash
+cp controller/mixxx-visuals-bridge.* \
+  ~/Library/Containers/org.mixxx.mixxx/Data/Library/Application\ Support/Mixxx/controllers/
+```
+
+### 3. Enable the mapping in Mixxx
+
+1. **Mixxx → Preferences → Controllers**
+2. Select **"Mixxx Visuals Bridge"** from the list
+3. Set its **Output port** to **"IAC Driver Bus 1"**
+4. Click **Enable** and **Apply**
+
+### 4. Install the Python dependency
+
+```bash
+pip install python-rtmidi
+```
+
+### 5. Run
+
+```bash
+python main.py --window --mixxx
+```
+
+Add `--device "BlackHole 2ch"` if you also want bass/mid/high frequency data for the shader modes.
 
 ### Controls
 
@@ -109,19 +166,23 @@ python main.py --window
 ## Architecture
 
 ```
-AudioDataSource          — captures audio, detects beats (pure numpy, no aubio)
-      ↓
-MusicState               — shared state: BPM, beat phase, volume, beat count
-      ↓
-ShaderWidget             — QOpenGLWidget; GLSL shaders via moderngl
-  └── AsciiVisualizer    — 6 ASCII modes (toggled with 'a', rendered via QPainter)
-        ↓
-Canvas (abstract)
-  ├── CursesCanvas       — terminal mode
-  └── QtCanvas           — Qt window ASCII mode (renders with QPainter)
+┌─ AudioDataSource  — audio capture + FFT beat detection (optional)  ─┐
+│  MixxxMidiSource  — SysEx MIDI bridge → accurate BPM + beat phase   │
+└──────────────────────────────────┬───────────────────────────────────┘
+                                   ↓
+                             MusicState
+                    BPM · beat phase · volume · beat count
+                                   ↓
+                             ShaderWidget  (QOpenGLWidget)
+                          ┌────────┴────────┐
+                    GLSL shaders        AsciiVisualizer  (press 'a')
+                    (moderngl)               ↓
+                                       Canvas (abstract)
+                                    ├── CursesCanvas  (terminal)
+                                    └── QtCanvas      (Qt window)
 ```
 
-The `Canvas` abstraction is also the migration path toward embedding directly inside Mixxx as a Qt widget (no other code changes required).
+`MixxxMidiSource` and `AudioDataSource` can run simultaneously — MIDI provides BPM/beat, audio provides frequency bands (bass/mid/high) for the shaders.
 
 ## Project layout
 
@@ -130,11 +191,16 @@ main.py                  entry point
 state.py                 shared music state + beat interpolation
 sources/
   base.py                DataSource interface
-  audio.py               audio capture + beat detection
-  beat_detector.py       FFT bass-band energy spike detector
+  audio.py               audio capture + FFT beat detection
+  beat_detector.py       numpy FFT bass-band energy spike detector
+  midi_source.py         Mixxx MIDI bridge receiver
+controller/
+  mixxx-visuals-bridge.midi.xml   Mixxx controller mapping (install in Mixxx)
+  mixxx-visuals-bridge.js         JS script — reads ControlProxy, sends SysEx
 visuals/
   canvas.py              Canvas ABC + colour constants
   curses_canvas.py       terminal backend
-  qt_window.py           Qt window + QtCanvas backend
-  ascii_vis.py           all 6 visual modes
+  qt_window.py           Qt window + QtCanvas + ShaderWidget
+  ascii_vis.py           6 ASCII visual modes
+  shaders.py             6 GLSL fragment shaders
 ```

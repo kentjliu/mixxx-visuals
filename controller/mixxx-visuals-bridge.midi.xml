@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MixxxControllerPreset mixxxVersion="2.3+" schemaVersion="1">
+  <info>
+    <name>Mixxx Visuals Bridge</name>
+    <author>mixxx-visuals</author>
+    <description>
+      Broadcasts deck BPM, beat phase, volume, and play state as SysEx MIDI
+      messages every 50 ms. Point the output port at the IAC Driver Bus 1
+      (macOS) so the Python visualiser can receive them.
+    </description>
+  </info>
+  <controller id="Mixxx Visuals Bridge">
+    <scriptfiles>
+      <file filename="mixxx-visuals-bridge.js" functionprefix="MixxxVisualsBridge"/>
+    </scriptfiles>
+    <controls/>
+    <outputs/>
+  </controller>
+</MixxxControllerPreset>
